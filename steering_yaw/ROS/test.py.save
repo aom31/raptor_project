@@ -1,0 +1,45 @@
+#!/usr/bin/env python
+import rospy
+from std_msgs.msg import String
+from sensor_msgs.msg import Joy
+from geometry_msgs.msg import Twist
+import time
+import serial
+import binascii
+import struct
+import numpy as np
+ser = serial.Serial(
+    port = '/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0',
+    baudrate = 115200,
+    parity = serial.PARITY_NONE,
+    stopbits = serial.STOPBITS_ONE,
+    bytesize = serial.EIGHTBITS
+)
+ser.isOpen()
+
+def tj_callback(data):
+
+    # start publisher of cmd_vel to control Turtlesim
+    pub = rospy.Publisher("turtle1/cmd_vel", Twist, queue_size=1)
+
+    # Create Twist message & add linear x and angular z from left joystick
+    twist = Twist()
+    twist.linear.x = data.axes[1]
+    twist.angular.z = data.axes[0]
+    angle = data.axes[1]  * 360  *27
+    data = ("acec21"+'{:0>8X}'.format(int(abs(angle))))
+    sumCheck = hex(sum(int(str(data[i:i+2]),base = 16) for i in range(0, len(data), 2)))[3:]
+    print((data+sumCheck).lower())
+    bytearray.fromhex((data+sumCheck).lower()))
+
+    ser.write(bytearray.fromhex((data+sumCheck).lower()))
+    # record values to log file and screen
+    rospy.loginfo("twist.linear: %f ; angular %f", twist.linear.x, twist.angular.z)
+
+def listener():
+    rospy.init_node('listener', anonymous=True)
+    rospy.Subscriber("joy", Joy, tj_callback, queue_size=1)
+    rospy.spin()
+    ser.close()
+if __name__ == '__main__':
+    listener()
