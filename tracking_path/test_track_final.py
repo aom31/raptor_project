@@ -9,49 +9,53 @@ import time
 import pandas as pd 
 import numpy as np
 import datetime
+import utm 
 
 #param variable
 port1 = "COM13"     #port usb that connect rover in your computer for gnss f9p
-#port2 = "COM6"      #port usb that connect steering rs232
+port2 = "COM17"      #port usb that connect steering rs232
 ser = serial.Serial(port1, baudrate = 115200)    
-# ser = serial.Serial(
-#     port2, 
-#     baudrate = 115200,
-#     parity = serial.PARITY_NONE,
-#     stopbits = serial.STOPBITS_ONE,
-#     bytesize = serial.EIGHTBITS
-# )
-# ser.isOpen()
+ser2 = serial.Serial(
+    port2, 
+    baudrate = 115200,
+    parity = serial.PARITY_NONE,
+    stopbits = serial.STOPBITS_ONE,
+    bytesize = serial.EIGHTBITS
+)
+ser2.isOpen()
 
 dt = 0.2           #time Hz define 5Hz
-WAYPOINTS_file = 'waypoint_refLinear.csv'    #put file record waypoint that reference for tracking 
+WAYPOINTS_file = 'pathRef_linearUTM.csv'    #put file record waypoint that reference for tracking 
 L = 1.68          #m wheel base of vehicle
-Kp = 1
-Ki = 0.1
-Kd = 0.5
+Kp = 100
+Ki = 20
+Kd = 50
 sum_error_cte =0
 prev_error_cte = 0
-def steer_input(steer):
+error_positive_negative = 0
 
+def steer_input(steer):
         out = ''
         angle = steer    #decimal number
         print("angle yaw current is %f " %steer)
         # angle = int(angle1)
         if angle == 'exit' :
-            ser.close()
+            ser2.close()
             exit()
         else :
-            data = ("acec21"+f'{int(angle):0>8X}')
-            sumCheck = hex(sum(int(data[i:i+2],16) for i in range(0, len(data), 2)))[3:]
-            print(bytes.fromhex((data+sumCheck).lower()))
-            ser.write(bytes.fromhex((data+sumCheck).lower()))
+            # data = ("acec21"+f'{int(angle):0>8X}')
+            # sumCheck = hex(sum(int(data[i:i+2],16) for i in range(0, len(data), 2)))[3:]
+            data = ("acec21"+'{:0>8X}'.format(int(angle) & (2**32-1)))
+            sumCheck = hex(sum(int(str(data[i:i+2]),base = 16) for i in range(0, len(data), 2)))[3:]
+            #print(bytes.fromhex((data+sumCheck).lower()))
+            ser2.write(bytes.fromhex((data+sumCheck).lower()))
             time.sleep(1)
-            while ser.inWaiting() > 0:
-                output = ser.read(1)
+            while ser2.inWaiting() > 0:
+                output = ser2.read(1)
                 out += str(output.hex())
             if out != '':
                  print(out)
-        return angle
+        return steer
  
 def main():
     #=== load waypoint =============
@@ -60,73 +64,69 @@ def main():
         waypoints = pd.read_table(f, sep=',', header=0, names=['x','y'])
         waypoints_np = np.array(waypoints)
     #input waypoint reference 
-    x_waypointRef = waypoints.x
-    y_waypointRef = waypoints.y
-
-    Dis = math.sqrt((x_waypointRef[0]-x_waypointRef[315])**2+(y_waypointRef[0]-y_waypointRef[315])**2) #distance point start to stop
-    #print("value distance is %f" %Dis)
+    y_waypointRef = waypoints.x
+    x_waypointRef = waypoints.y
+    Dis = math.sqrt((x_waypointRef[0]-x_waypointRef[376])**2+(y_waypointRef[0]-y_waypointRef[376])**2) #distance point start to stop
+    #print("value distance is %f" %Dis)  #56.56m
     #find linear equretion
-    slop  = (y_waypointRef[315]-y_waypointRef[0])/(x_waypointRef[315]-x_waypointRef[0])#find slop of linear equation
+    slop  = (x_waypointRef[376]-x_waypointRef[0])/(y_waypointRef[376]-y_waypointRef[0])#find slop of linear equation -147.302103
     #print("slop is %f" %slop)
     # find C fo linear equation
-    c  = y_waypointRef[0]-slop*x_waypointRef[0]
+    c  = x_waypointRef[0]-slop*y_waypointRef[0]
     #print("value C is %f"%c)
-    #print("linear equation is %f A+ %f Y+ %f = 0"%x_waypointRef[0] %y_waypointRef[0] %c)
     A = slop
     B = -1
    
     return A,B,c
 
-def update_state(x,y):
-    x_current_car = []
-    y_current_car = []
-    yaw_current_car = []
-    v_current = []
-    x_current_car = x 
-    y_current_car = y 
-    #yaw_current_car = yaw 
-    v_current = 0.55 #m/s
-    
-    #print("Update state of car x= %f y = %f  v=%f" %x_current_car %y_current_car %v_current)
-
-    return x_current_car,y_current_car
-
 def cte(x_car,y_car,A,B,c):
-    
-    cross_track_error = abs((A*x_car)+(B*y_car)+c)/math.sqrt(A**2+B**2)
 
-    if cross_track_error != 0:
-       
-        print("CTE is %f" %cross_track_error)
-      
-    elif cross_track_error == 0:
-        print("No error")
+    cross_track_error = abs((A*x_car)+(B*y_car)+c)/math.sqrt(A**2+B**2)
+    #linear x tell cte scope is 661486.950 to  661487.299  cte is 0.01 to 0.09
+    #cte is positive +cte left   is 661487.3008148358       to 661488.5024203522 cte is 0.1 to 1.5 
+    #cte is positive -cte right is  661486.9422366153          to 661485.416215819    cte is     1.680500
     
     return cross_track_error
+def cte_positive_negative(x_north,error_cte):
+    r = x_north
+    y = error_cte
+    global error_positive_negative
+    if x_north >= 661487.3008148358 and x_north <= 661488.5024203522:
+        error_positive_negative = y
+        print("error cte is positive %f" %error_positive_negative)
+    elif x_north <= 661486.9422366153 and x_north >= 661485.416215819:
+        error_positive_negative = (-1)*y
+        print("erorr cte negative is %f"%error_positive_negative)
+    return error_positive_negative
 
-def pid_angle(error_cte):
+def pid_angle(cte_p_n,cte_prev):
     global sum_error_cte
     global prev_error_cte 
-    print("*******************************")
-    print("current error is %f" %error_cte)
-    pre_error = error_cte
-    sum_error_cte += error_cte
+    #print("*******************************")
+    #print("current error is %f" %cte_p_n)
+    sum_error_cte += cte_p_n
     print("sum error is %f " %sum_error_cte)
-   
-    P = Kp*error_cte
+    P = Kp*cte_p_n
     I = Ki*sum_error_cte
-    # D = Kd*(error_cte-prev_error_cte)
-    yaw_expect = P+I
-    print("yaw angle is %f" %yaw_expect)
-    prev_error_cte = pre_error
-    print("previus error is %f " %prev_error_cte)
+    D = Kd*(error_cte-cte_prev)
+    yaw_expect = P+I+D
+    yaw_sent = yaw_expect
+    print("yaw angle is %f" %yaw_sent)
+    #prev_error_cte = pre_error
+    #print("previus error is %f " %prev_error_cte)
     print("**********************************")
+    return yaw_sent
 
-    return yaw_expect
-
-
-
-
+def Previous_state(x_north,y_east,cte_p_n):
+    x = []
+    y = []
+    cte_prev = []
+    x.append(x_north)
+    y.append(y_east)
+    cte_prev.append(cte_p_n)
+    
+    return cte_prev
+    
 if __name__ == '__main__':
     
     #=============Serial position from rover =================================
@@ -138,21 +138,40 @@ if __name__ == '__main__':
             newmsg=pynmea2.parse(data.decode("utf-8"))
             lat=newmsg.latitude
             lng=newmsg.longitude
-            gps = lat,lng 
-        
-            time.sleep(dt)  # sleep(second) 5Hz = 1/5=0.2sec
-
+            xy = utm.from_latlon(lat,lng)
+            #gps = lat,lng 
+            gps = "Latitude=" + str(lat) + "and Longitude=" + str(lng)
+            # sleep(second) 5Hz = 1/5=0.2sec
             #position current from Vehicle 
-            lat_x = lat
-            lng_y = lng
-            print(lat_x,lng_y)
-            #print("positioin current latitude %.8f longtitude %.8f"%lat_x %lng_y)   #show data
+            lat_y = lat
+            lng_x = lng
+            x_north = xy[0]
+            y_east = xy[1]
+            utm_locationre = x_north,y_east
+            
+            #print(type(x_north))
+            print("current x %f" %x_north)
+            print("current y %f" %y_east)
             a,b,c = main()
-            #cte(lat_x,lng_y,a,b,c)
-            #yaw = steer_input()
-            error_cte=cte(lat_x,lng_y,a,b,c)
-            yaw = pid_angle(error_cte)
-            steer_input(yaw)
+            error_cte = cte(x_north,y_east,a,b,c)
+            cte_p_n = cte_positive_negative(x_north,error_cte)
+            cte_prev = Previous_state(x_north,y_east,cte_p_n)
+            print("cte prev is ")
+            print(cte_prev)
+            yaw_expect = pid_angle(cte_p_n,cte_prev)
+            time.sleep(dt)
+            #steer_input(yaw_expect)
+            
+            
+            
+
+            
+            
+            
+            
+
+            
+            
             
             
            
