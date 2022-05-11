@@ -14,3 +14,7 @@ Check serials position read GNSS: cd gnss_positoining/script
 Check Test Motor Steering work! : cd steering_yaw/script/
 
 #python fn_steer_position.py
+
+Analyze Data 
+
+#python plot_resultData.py
