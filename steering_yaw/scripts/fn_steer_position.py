@@ -34,19 +34,7 @@ PID cal YAW
 '''
 WAYPOINTS_file = 'xy.csv'      #put file record waypoint that reference for tracking 
 
-class LBicycle_vehicle:
-        def __init__(self,x = 0.0,y = 0.0,v = 0.0,yaw = 0.0):
-            self.x = x
-            self.y = y  
-            self.v = v    
-            self.yaw = yaw
-            
-        def update_state(self,delta):
-            delta = np.clip(delta,-3000,3000)
-            self.x += self.v * math.cos(self.yaw)*dt
-            self.y += self.v *math.sin(self.yaw)*dt     
-            self.yaw += self.v/L * math.tan(delta)*dt     
-            self.v = 10
+
 
 
 def steer_input(steer):
@@ -70,22 +58,9 @@ def steer_input(steer):
         
         return angle
     
-def main():
-     #=== load waypoint =============
-    waypoints_file = WAYPOINTS_file
-    with open (waypoints_file) as f:
-        waypoints = pd.read_table(f, sep=',', header=0, names=['x','y'])
-        waypoints_np = np.array(waypoints)
-        
-    yaw_expect = [] 
-    P = Kp * CTE_t
-    I = last_integral + Ki *CTE_t *(t - last_time) 
-    D = Kd*(CTE_t - last_CTE) 
-    yaw_expect = P+I+D
-    current_angle = steer_input(yaw_expect)
 
 if __name__ == '__main__':
-    main()
+    
     # current_angle = steer_input(input(">>"))
     
     
